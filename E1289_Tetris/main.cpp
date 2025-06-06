@@ -1,4 +1,6 @@
 #include <iostream>
+#include <thread>
+#include <chrono>
 #include <Windows.h>
 
 // Blocks
@@ -23,6 +25,28 @@ int Rotate(int gridX, int gridY, int rotation)
 	case 3: return 3 - gridY + (gridX * 4);		// 270 degrees
 	}
 	return 0;
+}
+
+bool DoesPieceFit(int nTetromino, int nRotation, int nPosX, int nPosY)
+{
+	for (int px = 0; px < 4; px++)
+		for (int py = 0; py < 4; py++)
+		{
+			// Get index into piece
+			int pi = Rotate(px, py, nRotation);
+
+			// Get index into field
+			int fi = (nPosY + py) * nFieldWidth + (nPosX + px);
+
+			if (nPosX + px >= 0 && nPosX + px < nFieldWidth)
+				if (nPosY + py >= 0 && nPosY + py < nFieldHeight)
+				{
+					if (wideTetromino[nTetromino][pi] == L'X' && pField[fi] != 0)
+						return false;
+				}
+		}
+
+	return true;
 }
 
 int main()
@@ -77,16 +101,38 @@ int main()
 	SetConsoleActiveScreenBuffer(hConsole);
 	DWORD dwBytesWritten = 0;
 
+	// Game Logic Stuff
 	bool bGameOver = false;
+
+	int nCurrentPiece = 1;
+	int nCurrentRotation = 0;
+	int nCurrentX = nFieldWidth / 2;
+	int nCurrentY = 0;
+
+	bool bKey[4];
 
 	// Main Game Loop
 	while (!bGameOver)
 	{
 		// Game Timing =====================================================================
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 		// Input ===========================================================================
+		for (int k = 0; k < 4; k++)
+			bKey[k] = (0x8000 & GetAsyncKeyState((unsigned char)("\x27\x25\x28Z"[k]))) != 0;
+
 
 		// Game Logic ======================================================================
+		if (bKey[0])
+			if (DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX + 1, nCurrentY))
+				nCurrentX = nCurrentX + 1;
+		if (bKey[1])
+			if (DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX - 1, nCurrentY))
+				nCurrentX = nCurrentX - 1;
+		if (bKey[2])
+			if (DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX, nCurrentY + 1))
+				nCurrentY = nCurrentY + 1;
+
 
 		// Render Output ===================================================================
 
@@ -94,6 +140,12 @@ int main()
 		for (int x = 0; x < nFieldWidth; x++)
 			for (int y = 0; y < nFieldHeight; y++)
 				screen[(y + 3) * nScreenWidth + (x + 55)] = L" ABCDEFG=#"[pField[y * nFieldWidth + x]];
+
+		// Draw Current Piece
+		for (int px = 0; px < 4; px++)
+			for (int py = 0; py < 4; py++)
+				if (wideTetromino[nCurrentPiece][Rotate(px, py, nCurrentRotation)] == L'X')
+					screen[(nCurrentY + py + 3) * nScreenWidth + (nCurrentX + px + 55)] = nCurrentPiece + 65;
 
 		// Write to console output buffer
 		WriteConsoleOutputCharacter(hConsole, screen, nScreenWidth * nScreenHeight, { 0,0 }, &dwBytesWritten);
