@@ -1,6 +1,7 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <vector>
 #include <Windows.h>
 
 // Blocks
@@ -110,12 +111,23 @@ int main()
 	int nCurrentY = 0;
 
 	bool bKey[4];
+	bool bRotateHold = false;
+
+	int nSpeed = 20;
+	int nSpeedCount = 0;
+	bool bForceDown = false;
+	int nPieceCount = 0;
+	int nScore = 0;
+
+	std::vector<int> vLines;
 
 	// Main Game Loop
 	while (!bGameOver)
 	{
 		// Game Timing =====================================================================
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		nSpeedCount++;
+		bForceDown = (nSpeedCount == nSpeed);
 
 		// Input ===========================================================================
 		for (int k = 0; k < 4; k++)
@@ -123,16 +135,71 @@ int main()
 
 
 		// Game Logic ======================================================================
-		if (bKey[0])
-			if (DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX + 1, nCurrentY))
-				nCurrentX = nCurrentX + 1;
-		if (bKey[1])
-			if (DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX - 1, nCurrentY))
-				nCurrentX = nCurrentX - 1;
-		if (bKey[2])
-			if (DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX, nCurrentY + 1))
-				nCurrentY = nCurrentY + 1;
+		nCurrentX += (bKey[0] && (DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX + 1, nCurrentY))) ? 1 : 0;
+		nCurrentX -= (bKey[1] && (DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX - 1, nCurrentY))) ? 1 : 0;
+		nCurrentY += (bKey[2] && (DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX, nCurrentY + 1))) ? 1 : 0;
 
+		if (bKey[3]) {
+			nCurrentRotation += (!bRotateHold && DoesPieceFit(nCurrentPiece, nCurrentRotation + 1, nCurrentX, nCurrentY)) ? 1 : 0;
+			bRotateHold = true;
+		}
+		else {
+			bRotateHold = false;
+		}
+
+		if (bForceDown) {
+
+			// Update difficulty every 50 pieces
+			nSpeedCount = 0;
+			nPieceCount++;
+			if (nPieceCount % 50 == 0)
+				if (nSpeed >= 10) nSpeed--;
+
+			// Test if piece can be moved down
+			if (DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX, nCurrentY + 1))
+				nCurrentY++;
+			// If it can't...
+			else {
+				// Lock the current piece in the field
+				for (int px = 0; px < 4; px++)
+					for (int py = 0; py < 4; py++)
+						if (wideTetromino[nCurrentPiece][Rotate(px, py, nCurrentRotation)] != L'.')
+							pField[(nCurrentY + py) * nFieldWidth + (nCurrentX + px)] = nCurrentPiece + 1;
+
+				// Check have we got any lines base on our last piece
+				for (int py = 0; py < 4; py++)
+				{
+					if (nCurrentY + py < nFieldHeight - 1)
+					{
+						bool bLine = true;
+						for (int px = 1; px < nFieldWidth - 1; px++)
+							bLine &= (pField[(nCurrentY + py) * nFieldWidth + px]) != 0;
+
+						if (bLine)
+						{
+							// Remove Line, set to =
+							for (int px = 1; px < nFieldWidth - 1; px++)
+								pField[(nCurrentY + py) * nFieldWidth + px] = 8;
+
+							vLines.push_back(nCurrentY + py);
+						}
+					}
+				}
+
+				nScore += 25;
+				if (!vLines.empty()) nScore += (1 << vLines.empty()) * 100;
+
+				// Choose next piece
+				nCurrentX = nFieldWidth / 2;
+				nCurrentY = 0;
+				nCurrentRotation = 0;
+				nCurrentPiece = rand() % 7;
+
+				// If piece does not fit
+				bGameOver = !DoesPieceFit(nCurrentPiece, nCurrentRotation, nCurrentX, nCurrentY);
+			}
+			nSpeedCount = 0;
+		}
 
 		// Render Output ===================================================================
 
@@ -147,9 +214,33 @@ int main()
 				if (wideTetromino[nCurrentPiece][Rotate(px, py, nCurrentRotation)] == L'X')
 					screen[(nCurrentY + py + 3) * nScreenWidth + (nCurrentX + px + 55)] = nCurrentPiece + 65;
 
+		// Draw Score
+		swprintf_s(&screen[2 * nScreenWidth + nFieldWidth + 58], 16, L"Score: %8d", nScore);
+
+		if (!vLines.empty())
+		{
+			// Display Frame
+			WriteConsoleOutputCharacter(hConsole, screen, nScreenWidth * nScreenHeight, {0, 0}, &dwBytesWritten);
+			std::this_thread::sleep_for(std::chrono::milliseconds(400));
+
+			for (auto& v : vLines)
+				for (int px = 1; px < nFieldWidth - 1; px++)
+				{
+					for (int py = v; py > 0; py--)
+						pField[py * nFieldWidth + px] = pField[(py - 1) * nFieldWidth + px];
+					pField[px] = 0;
+				}
+			vLines.clear();
+		}
+
 		// Write to console output buffer
 		WriteConsoleOutputCharacter(hConsole, screen, nScreenWidth * nScreenHeight, { 0,0 }, &dwBytesWritten);
 	}
+
+	// Game Over
+	CloseHandle(hConsole);
+	std::cout << "Game Over! Score: " << nScore << endl;
+	system("pause");
 
 	return 0;
 }
