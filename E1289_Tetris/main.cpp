@@ -4,6 +4,10 @@
 #include <vector>
 #include <Windows.h>
 
+// Default Command Prompt Screen Size
+int nScreenWidth = 120;		// x (Columns)
+int nScreenHeight = 40;		// y (Rows)
+
 // Blocks
 std::wstring wideTetromino[7];
 
@@ -12,24 +16,23 @@ int nFieldWidth = 12;
 int nFieldHeight = 22;
 unsigned char* pField = nullptr;
 
-// Default Command Prompt Screen Size
-int nScreenWidth = 120;		// x (Columns)
-int nScreenHeight = 40;		// y (Rows)
 
 int Rotate(int gridX, int gridY, int rotation)
 {
+	int pi = 0;
 	switch (rotation % 4)
 	{
-	case 0: return gridY * 4 + gridX;			// 0 degrees
-	case 1: return 12 + gridY - (gridX * 4);	// 90 degrees
-	case 2: return 15 - (gridY * 4) - gridX;	// 180 degrees
-	case 3: return 3 - gridY + (gridX * 4);		// 270 degrees
+	case 0: pi = gridY * 4 + gridX; break;			// 0 degrees
+	case 1: pi = 12 + gridY - (gridX * 4); break; 	// 90 degrees
+	case 2: pi = 15 - (gridY * 4) - gridX; break; 	// 180 degrees
+	case 3: pi = 3 - gridY + (gridX * 4); break;		// 270 degrees
 	}
-	return 0;
+	return pi;
 }
 
 bool DoesPieceFit(int nTetromino, int nRotation, int nPosX, int nPosY)
 {
+	// All field cells >0 are occupied
 	for (int px = 0; px < 4; px++)
 		for (int py = 0; py < 4; py++)
 		{
@@ -40,11 +43,14 @@ bool DoesPieceFit(int nTetromino, int nRotation, int nPosX, int nPosY)
 			int fi = (nPosY + py) * nFieldWidth + (nPosX + px);
 
 			if (nPosX + px >= 0 && nPosX + px < nFieldWidth)
+			{
 				if (nPosY + py >= 0 && nPosY + py < nFieldHeight)
 				{
-					if (wideTetromino[nTetromino][pi] == L'X' && pField[fi] != 0)
+					// In Bounds so do collision check
+					if (wideTetromino[nTetromino][pi] != L'.' && pField[fi] != 0)
 						return false;
 				}
+			}
 		}
 
 	return true;
@@ -52,7 +58,14 @@ bool DoesPieceFit(int nTetromino, int nRotation, int nPosX, int nPosY)
 
 int main()
 {
-	// Create assets
+	// Create Screen Buffer
+	wchar_t* screen = new wchar_t[nScreenWidth * nScreenHeight];
+	for (int i = 0; i < nScreenWidth * nScreenHeight; i++) screen[i] = L' ';
+	HANDLE hConsole = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
+	SetConsoleActiveScreenBuffer(hConsole);
+	DWORD dwBytesWritten = 0;
+
+	// Create assets, you can also do it in one continuous line
 	wideTetromino[0].append(L"..X.");
 	wideTetromino[0].append(L"..X.");
 	wideTetromino[0].append(L"..X.");
@@ -95,16 +108,7 @@ int main()
 		for (int y = 0; y < nFieldHeight; y++)
 			pField[y * nFieldWidth + x] = (x == 0 || x == nFieldWidth - 1 || y == nFieldHeight - 1) ? 9 : 0;
 
-	// Command Line Screen Buffer Effect
-	wchar_t* screen = new wchar_t[nScreenWidth * nScreenHeight];
-	for (int i = 0; i < nScreenWidth * nScreenHeight; i++) screen[i] = L' ';
-	HANDLE hConsole = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
-	SetConsoleActiveScreenBuffer(hConsole);
-	DWORD dwBytesWritten = 0;
-
 	// Game Logic Stuff
-	bool bGameOver = false;
-
 	int nCurrentPiece = 1;
 	int nCurrentRotation = 0;
 	int nCurrentX = nFieldWidth / 2;
@@ -118,8 +122,9 @@ int main()
 	bool bForceDown = false;
 	int nPieceCount = 0;
 	int nScore = 0;
-
 	std::vector<int> vLines;
+
+	bool bGameOver = false;
 
 	// Main Game Loop
 	while (!bGameOver)
@@ -211,19 +216,20 @@ int main()
 		// Draw Current Piece
 		for (int px = 0; px < 4; px++)
 			for (int py = 0; py < 4; py++)
-				if (wideTetromino[nCurrentPiece][Rotate(px, py, nCurrentRotation)] == L'X')
+				if (wideTetromino[nCurrentPiece][Rotate(px, py, nCurrentRotation)] != L'.')
 					screen[(nCurrentY + py + 3) * nScreenWidth + (nCurrentX + px + 55)] = nCurrentPiece + 65;
 
 		// Draw Score
 		swprintf_s(&screen[2 * nScreenWidth + nFieldWidth + 58], 16, L"Score: %8d", nScore);
 
+		// Animate Line Completion
 		if (!vLines.empty())
 		{
 			// Display Frame
 			WriteConsoleOutputCharacter(hConsole, screen, nScreenWidth * nScreenHeight, {0, 0}, &dwBytesWritten);
 			std::this_thread::sleep_for(std::chrono::milliseconds(400));
 
-			for (auto& v : vLines)
+			for (auto &v : vLines)
 				for (int px = 1; px < nFieldWidth - 1; px++)
 				{
 					for (int py = v; py > 0; py--)
@@ -239,7 +245,7 @@ int main()
 
 	// Game Over
 	CloseHandle(hConsole);
-	std::cout << "Game Over! Score: " << nScore << endl;
+	std::cout << "Game Over! Score: " << nScore << std::endl;
 	system("pause");
 
 	return 0;
